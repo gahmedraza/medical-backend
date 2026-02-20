@@ -22,7 +22,7 @@ class AuthController(
     data class RegisterRequest(
         val email: String,
         val password: String,
-        val role: Role
+        val role: Role = Role.DOCTOR
     )
 
     data class LoginRequest(
