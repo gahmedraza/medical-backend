@@ -8,6 +8,7 @@ import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
+import java.time.LocalDateTime
 
 @Entity
 @Table(name = "users")
@@ -20,10 +21,20 @@ data class User(
     @Column(unique = true)
     val email: String,
 
-    val password: String,
+    var password: String,
 
     @Enumerated(EnumType.STRING)
-    val role: Role
+    val role: Role,
+
+    var isVerified: Boolean = false,
+
+    var otp: String? = null,
+
+    var otpExpiry: Long? = null,
+
+    var resetToken: String? = null,
+
+    var resetTokenExpiry: LocalDateTime? = null
 )
 
 enum class Role {
