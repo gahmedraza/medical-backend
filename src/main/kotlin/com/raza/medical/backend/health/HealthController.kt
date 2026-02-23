@@ -1,4 +1,4 @@
-package com.raza.medical.backend.controller
+package com.raza.medical.backend.health
 
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RestController

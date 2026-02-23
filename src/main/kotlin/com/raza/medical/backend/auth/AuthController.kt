@@ -1,14 +1,14 @@
-package com.raza.medical.backend.controller
+package com.raza.medical.backend.auth
 
-import com.raza.medical.backend.model.Role
-import com.raza.medical.backend.model.User
-import com.raza.medical.backend.repository.UserRepository
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier
+import com.raza.medical.backend.user.entity.Role
+import com.raza.medical.backend.user.entity.User
+import com.raza.medical.backend.user.repository.UserRepository
 import com.raza.medical.backend.security.JwtService
-import org.springframework.dao.DataIntegrityViolationException
+import com.raza.medical.backend.user.service.UserService
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
-import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
@@ -21,32 +21,10 @@ import java.util.UUID
 class AuthController(
     private val userRepository: UserRepository,
     private val passwordEncoder: BCryptPasswordEncoder,
-    private val jwtService: JwtService
+    private val jwtService: JwtService,
+    private val googleIdTokenVerifier: GoogleIdTokenVerifier,
+    private val userService: UserService
 ) {
-
-    data class RegisterRequest(
-        val email: String,
-        val password: String,
-        val role: Role = Role.DOCTOR
-    )
-
-    data class LoginRequest(
-        val email: String,
-        val password: String
-    )
-
-    data class AuthResponse(
-        val token: String
-    )
-
-    data class RegisterResponse(
-        val message: String
-    )
-
-    data class VerifyOtpRequest(
-        val email: String,
-        val otp: String
-    )
 
     @PostMapping("/register")
     fun register(@RequestBody request: RegisterRequest): ResponseEntity<Any> {
@@ -150,7 +128,7 @@ class AuthController(
     fun forgotPassword(@RequestBody req: ForgotPasswordRequest):
             ResponseEntity<Any> {
         val user = userRepository.findByEmail(req.email)
-            ?:return ResponseEntity.ok(
+            ?: return ResponseEntity.ok(
                 "If account exists, reset link generated"
             )
 
@@ -161,7 +139,7 @@ class AuthController(
         user.resetTokenExpiry = expiry
         userRepository.save(user)
 
-        val link = "myapp://rese-password?token=$token"
+        val link = "myapp://resetPassword?token=$token"
 
         return ResponseEntity.ok(
             ForgotPasswordResponse(link)
@@ -170,17 +148,24 @@ class AuthController(
 
     @PostMapping("/reset-password")
     fun resetPassword(@RequestBody req: ResetPasswordRequest):
-            ResponseEntity<String> {
+            ResponseEntity<ResetPasswordResponse> {
         val user: User = userRepository.findByResetToken(req.token)
             ?: return ResponseEntity.badRequest().body(
-                "Invalid Token"
+                ResetPasswordResponse(
+                    false,
+                    "Invalid Token"
+                )
             )
 
-        if(user.resetTokenExpiry!!.isBefore(
+        if (user.resetTokenExpiry!!.isBefore(
                 LocalDateTime.now()
-        )) {
+            )
+        ) {
             return ResponseEntity.badRequest().body(
-                "Token expired"
+                ResetPasswordResponse(
+                    false,
+                    "Token expired"
+                )
             )
         }
 
@@ -190,8 +175,75 @@ class AuthController(
         userRepository.save(user)
 
         return ResponseEntity.ok(
-            "Password updated"
+            ResetPasswordResponse(
+                true,
+                "Password updated"
+            )
         )
 
     }
+
+    @PostMapping("/google")
+    fun loginWithGoogle(
+        @RequestBody request: GoogleLoginRequest): ResponseEntity<Any> {
+
+        val idToken = googleIdTokenVerifier.verify(request.idToken)
+            ?: return ResponseEntity.status(
+                HttpStatus.UNAUTHORIZED
+            ).body(
+                "invalid token"
+            )
+
+        val payload = idToken.payload
+
+        val email = payload.email
+        val googleId = payload.subject
+        val name = payload["name"] as String?
+
+        val user = userService.findOrCreateGoogleUser(email, googleId, name)
+
+        val accessToken = jwtService.generateToken(user)
+        val refreshToken = jwtService.generateToken(user)
+
+        return ResponseEntity.ok(
+            mapOf(
+                "userId" to user.id,
+                "accessToken" to accessToken,
+                "refreshToken" to refreshToken
+            )
+        )
+    }
 }
+
+data class ResetPasswordResponse(
+    var result: Boolean? = false,
+    var message: String? = null
+)
+
+data class GoogleLoginRequest(
+    val idToken: String
+)
+
+data class RegisterRequest(
+    val email: String,
+    val password: String,
+    val role: Role = Role.DOCTOR
+)
+
+data class LoginRequest(
+    val email: String,
+    val password: String
+)
+
+data class AuthResponse(
+    val token: String
+)
+
+data class RegisterResponse(
+    val message: String
+)
+
+data class VerifyOtpRequest(
+    val email: String,
+    val otp: String
+)

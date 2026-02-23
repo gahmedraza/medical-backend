@@ -1,4 +1,4 @@
-package com.raza.medical.backend.model
+package com.raza.medical.backend.user.entity
 
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -21,10 +21,10 @@ data class User(
     @Column(unique = true)
     val email: String,
 
-    var password: String,
+    var password: String?,
 
     @Enumerated(EnumType.STRING)
-    val role: Role,
+    val role: Role = Role.DOCTOR,
 
     var isVerified: Boolean = false,
 
@@ -34,7 +34,11 @@ data class User(
 
     var resetToken: String? = null,
 
-    var resetTokenExpiry: LocalDateTime? = null
+    var resetTokenExpiry: LocalDateTime? = null,
+
+    var googleId: String? = null,
+
+    var name: String? = null
 )
 
 enum class Role {

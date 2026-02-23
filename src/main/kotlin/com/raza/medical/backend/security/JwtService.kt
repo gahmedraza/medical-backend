@@ -1,6 +1,6 @@
 package com.raza.medical.backend.security
 
-import com.raza.medical.backend.model.User
+import com.raza.medical.backend.user.entity.User
 import io.jsonwebtoken.Jwts
 import io.jsonwebtoken.SignatureAlgorithm
 import io.jsonwebtoken.security.Keys
