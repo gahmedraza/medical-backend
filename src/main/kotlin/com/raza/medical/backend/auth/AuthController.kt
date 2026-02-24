@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.client.RestTemplate
 import java.time.LocalDateTime
 import java.util.UUID
 
@@ -23,7 +24,8 @@ class AuthController(
     private val passwordEncoder: BCryptPasswordEncoder,
     private val jwtService: JwtService,
     private val googleIdTokenVerifier: GoogleIdTokenVerifier,
-    private val userService: UserService
+    private val userService: UserService,
+    private val restTemplate: RestTemplate = RestTemplate()
 ) {
 
     @PostMapping("/register")
@@ -213,7 +215,60 @@ class AuthController(
             )
         )
     }
+
+    @PostMapping("/facebook")
+    fun loginWithFacebook(request: FacebookLoginRequest):
+            ResponseEntity<Any> {
+
+        val fbUser= verifyFacebookToken(request.accessToken!!)
+
+        val user = userRepository.findByFacebookId(fbUser.id!!)
+            ?: userRepository.save(
+                User(
+                    email = fbUser.email!!,
+                    name = fbUser.name,
+                    facebookId = fbUser.id,
+                    provider = "FACEBOOK",
+                    password = ""
+                )
+            )
+
+        val jwt = jwtService.generateToken(user)
+
+        return ResponseEntity.ok(FacebookLoginResponse(jwt, "${user.id}"))
+    }
+
+    data class FacebookLoginResponse(
+        var jwt: String? = null,
+        var id: String? = null
+    )
+
+    private fun verifyFacebookToken(token: String):
+            FacebookUser {
+        val url = "https://graph.facebook.com/me?fields=id,name,email&access_token=$token"
+
+        val response = restTemplate.getForEntity(url, FacebookUser::class.java)
+
+        if(!response.statusCode.is2xxSuccessful ||
+            response.body == null) {
+            throw RuntimeException(
+                "Invalid Facebook token"
+            )
+        }
+
+        return response.body!!
+    }
 }
+
+data class FacebookLoginRequest(
+    var accessToken: String? = null
+)
+
+data class FacebookUser(
+    var id: String? = null,
+    var name: String? = null,
+    var email: String? = null
+)
 
 data class ResetPasswordResponse(
     var result: Boolean? = false,

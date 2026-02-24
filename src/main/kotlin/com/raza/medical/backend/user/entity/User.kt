@@ -38,7 +38,11 @@ data class User(
 
     var googleId: String? = null,
 
-    var name: String? = null
+    var name: String? = null,
+
+    var facebookId: String? = null,
+
+    var provider: String? = null
 )
 
 enum class Role {
