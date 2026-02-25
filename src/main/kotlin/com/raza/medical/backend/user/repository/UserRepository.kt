@@ -9,4 +9,6 @@ interface UserRepository : JpaRepository<User, Long> {
     fun findByResetToken(resetToken: String): User?
 
     fun findByFacebookId(facebookId: String): User?
+
+    fun findByGithubId(githubId: String): User?
 }

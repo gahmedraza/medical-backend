@@ -42,7 +42,9 @@ data class User(
 
     var facebookId: String? = null,
 
-    var provider: String? = null
+    var provider: String? = null,
+
+    var githubId: String? = null
 )
 
 enum class Role {
