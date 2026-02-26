@@ -2,12 +2,14 @@ package com.raza.medical.backend.auth
 
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier
 import com.google.api.client.util.Value
+import com.raza.medical.backend.GithubProperties
 import org.springframework.http.HttpHeaders
 import com.raza.medical.backend.user.entity.Role
 import com.raza.medical.backend.user.entity.User
 import com.raza.medical.backend.user.repository.UserRepository
 import com.raza.medical.backend.security.JwtService
 import com.raza.medical.backend.user.service.UserService
+import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
@@ -31,7 +33,8 @@ class AuthController(
     private val jwtService: JwtService,
     private val googleIdTokenVerifier: GoogleIdTokenVerifier,
     private val userService: UserService,
-    private val restTemplate: RestTemplate = RestTemplate()
+    private val restTemplate: RestTemplate = RestTemplate(),
+    private val props: GithubProperties
 ) {
 
     @PostMapping("/register")
@@ -223,7 +226,7 @@ class AuthController(
     }
 
     @PostMapping("/facebook")
-    fun loginWithFacebook(request: FacebookLoginRequest):
+    fun loginWithFacebook(@RequestBody request: FacebookLoginRequest):
             ResponseEntity<Any> {
 
         val fbUser= verifyFacebookToken(request.accessToken!!)
@@ -260,48 +263,52 @@ class AuthController(
         return response.body!!
     }
 
-    @Value("\${github.client-id}")
-    lateinit var githubClientId: String
-
-    @Value("\${github.client-secret}")
-    lateinit var githubClientSecret: String
-
     @PostMapping("/github")
-    fun loginWithGithub(request: GithubLoginRequest):
+    fun loginWithGithub(@RequestBody request: GithubLoginRequest):
             ResponseEntity<Any> {
 
         val githubUser = verifyGithubCode(request.code!!)
 
-        val user = userRepository.findByGithubId(githubUser.id!!)
-            ?: userRepository.save(
-                User(
-                    email = githubUser.email ?: "",
-                    name = githubUser.name?:githubUser.login,
-                    githubId = githubUser.id,
-                    provider= "GITHUB",
-                    password = ""
-                )
-            )
+        var user = userRepository.findByGithubId(githubUser.id!!)
 
-        val jwt = jwtService.generateToken(user)
+        if(user != null) {
+            user.githubId = githubUser.id
+            user = userRepository.save(user)
+
+        } else {
+            user = userRepository.findByEmail(githubUser.email!!)
+
+            if(user == null) {
+                user = userRepository.save(
+                    User(
+                        email = githubUser.email ?: "",
+                        name = githubUser.name?:githubUser.login,
+                        githubId = githubUser.id,
+                        provider= "GITHUB",
+                        password = ""
+                    )
+                )
+            }
+        }
+
+        val jwt = jwtService.generateToken(user!!)
 
         return ResponseEntity.ok(
             GithubLoginResponse(
-                jwt,
-                "${user.id}"
+                token = jwt,
+                userId = "${user.id}"
             )
         )
     }
 
-    private fun verifyGithubCode(code: String)
-    : GithubUser {
+    private fun verifyGithubCode(code: String): GithubUser {
 
         val tokenUrl = "https://github.com/login/oauth/access_token"
 
         val tokenRequest = LinkedMultiValueMap<String, String>()
             .apply {
-                add("client_id", githubClientId)
-                add("client_secret", githubClientSecret)
+                add("client_id", props.clientId)
+                add("client_secret", props.clientSecret)
                 add("code", code)
             }
 
@@ -317,6 +324,8 @@ class AuthController(
             tokenUrl, tokenEntity, GithubTokenResponse::class.java
         )
 
+        println("response: ${tokenResponse.body}")
+
         if(!tokenResponse.statusCode.is2xxSuccessful||
             tokenResponse.body==null) {
             throw RuntimeException("Invalid github code")
@@ -331,7 +340,7 @@ class AuthController(
         val userEntity = HttpEntity<Void>(userHeaders)
 
         val userResponse = restTemplate.exchange(
-            "http://api.github.com/user",
+            "https://api.github.com/user",
             HttpMethod.GET,
             userEntity,
             GithubUser::class.java
@@ -342,36 +351,60 @@ class AuthController(
             throw RuntimeException("invalid github code")
         }
 
-        return userResponse.body!!
+        val githubUser = userResponse.body
+
+        val emailResponse = restTemplate.exchange(
+            "https://api.github.com/user/emails",
+            HttpMethod.GET,
+            userEntity,
+            Array<GithubEmail>::class.java
+        )
+
+        val email = emailResponse.body
+            ?.firstOrNull {
+                it.primary!! && it.verified!!
+            }
+            ?.email
+
+        return githubUser?.copy(email = email)!!
     }
-
-    class GithubLoginRequest {
-        var code: String?= null
-    }
-
-    class GithubLoginResponse {
-        var token: String? = null
-        val userId: String? = null
-    }
-
-    class GithubTokenRequest {
-    }
-
-    class GithubTokenResponse {
-        val access_token: String? = null
-        val token_type: String? = null
-        val scope: String? = null
-    }
-
-    class GithubUser {
-
-    }
-
-    data class FacebookLoginResponse(
-        var jwt: String? = null,
-        var id: String? = null
-    )
 }
+
+data class GithubEmail(
+    var email: String? = null,
+    var primary: Boolean? = false,
+    var verified: Boolean? = false
+)
+
+class GithubLoginRequest {
+    var code: String?= null
+}
+
+data class GithubLoginResponse (
+    var token: String? = null,
+    var userId: String? = null
+)
+
+class GithubTokenRequest {
+}
+
+data class GithubTokenResponse (
+    val access_token: String? = null,
+    val token_type: String? = null,
+    val scope: String? = null
+)
+
+data class GithubUser(
+    var id: String? = null,
+    var login: String? = null,
+    var name: String? = null,
+    var email: String? = null
+)
+
+data class FacebookLoginResponse(
+    var jwt: String? = null,
+    var id: String? = null
+)
 
 data class FacebookLoginRequest(
     var accessToken: String? = null
